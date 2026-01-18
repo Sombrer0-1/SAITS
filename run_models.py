@@ -35,6 +35,11 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 
+# 🔇 关闭所有警告信息
+warnings.filterwarnings("ignore")
+# 特别过滤 sklearn 的 pkg_resources 警告
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
+
 try:
     import nni
 except ImportError:
@@ -521,7 +526,7 @@ if __name__ == "__main__":
     ), f'Given config file "{args.config_path}" does not exists'
     # load settings from config file
     cfg = ConfigParser(interpolation=ExtendedInterpolation())
-    cfg.read(args.config_path)
+    cfg.read(args.config_path, encoding='utf-8')
     args = read_arguments(args, cfg)
 
     if args.model_type in ["Transformer", "SAITS"]:  # if SA-based model
@@ -609,7 +614,8 @@ if __name__ == "__main__":
     ), f"optimizer type should be in {OPTIMIZER.keys()}, but get{args.optimizer_type}"
     assert args.device in ["cpu", "cuda"], "device should be cpu or cuda"
 
-    time_now = datetime.now().__format__("%Y-%m-%d_T%H:%M:%S")
+    # 使用下划线替代冒号,避免 Windows 文件名非法字符问题
+    time_now = datetime.now().__format__("%Y-%m-%d_T%H_%M_%S")
     args.model_saving, args.log_saving = check_saving_dir_for_model(args, time_now)
     logger = setup_logger(args.log_saving + "_" + time_now, "w")
     logger.info(f"args: {args}")

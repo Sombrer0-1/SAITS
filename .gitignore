@@ -1,0 +1,259 @@
+# ========================================
+# SAITS 项目 .gitignore 配置文件
+# 创建日期: 2026-01-18
+# ========================================
+
+# ==========================================
+# 1. 数据集相关 (Dataset Files)
+# ==========================================
+# 生成的数据集目录 (通常很大，几百MB到几GB)
+generated_datasets/
+dataset_generating_scripts/RawData/
+
+# 常见数据文件格式
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.npy
+*.npz
+*.csv
+*.tsv
+*.dat
+*.data
+
+# 压缩的数据文件
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# ==========================================
+# 2. 训练结果与模型文件 (Results & Models)
+# ==========================================
+# 训练结果目录 (包含模型检查点、日志、TensorBoard等)
+NIPS_results/
+results/
+outputs/
+checkpoints/
+
+# 模型文件 (通常很大)
+*.pth
+*.pt
+*.ckpt
+*.model
+*.weights
+*.h5  # Keras模型
+*.pb   # TensorFlow模型
+
+# TensorBoard 日志
+events.out.tfevents.*
+tensorboard/
+logs/
+tb_logs/
+
+# 模型预测/插补结果
+imputations.h5
+predictions.h5
+imputed_*.h5
+
+# ==========================================
+# 3. Python 相关 (Python Environment)
+# ==========================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# Conda environment
+.conda/
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# PyCharm
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Spyder
+.spyderproject
+.spyproject
+
+# ==========================================
+# 4. 系统与临时文件 (System & Temp Files)
+# ==========================================
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.nfs*
+
+# 临时文件
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.old
+*.orig
+
+# ==========================================
+# 5. 日志文件 (Log Files)
+# ==========================================
+*.log
+*.out
+*.err
+log_*/
+logs_*/
+
+# ==========================================
+# 6. NNI 超参数搜索相关 (NNI Tuning)
+# ==========================================
+nni_experiments/
+.nni/
+nni_trial_*/
+
+# ==========================================
+# 7. 研究相关临时文件 (Research Temp Files)
+# ==========================================
+# 论文草稿
+draft/
+drafts/
+paper_draft/
+
+# 实验记录
+experiments/
+exp_*/
+
+# 笔记
+notes/
+*.note
+
+# 可视化输出
+figures/
+plots/
+*.png  # 如果不需要版本控制图片
+*.jpg
+*.jpeg
+*.pdf  # 如果不需要版本控制PDF (但保留 Paper_SAITS.pdf)
+
+# ==========================================
+# 8. Git 相关 (Git Specific)
+# ==========================================
+*.orig
+*.rej
+
+# ==========================================
+# 9. 其他大文件 (Other Large Files)
+# ==========================================
+# 压缩包
+*.gz
+*.bz2
+*.xz
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# ==========================================
+# 例外规则 (Exceptions)
+# ==========================================
+# 保留重要的配置和文档
+!.gitignore
+!README.md
+!LICENSE
+!CITATION.cff
+!Paper_SAITS.pdf  # 保留论文PDF
+!requirements.txt
+!conda_env_dependencies.yml
+
+# 保留配置文件
+!configs/*.ini
+!NNI_tuning/**/*.ini
+!NNI_tuning/**/*.yml
+!NNI_tuning/**/*.json
+
+# 保留代码文件
+!*.py
+!*.sh
+
+# 保留示例数据 (如果有小型示例)
+# !example_data/
+
+# ==========================================
+# 项目特定忽略 (Project-Specific)
+# ==========================================
+# 个人测试文件
+test_*.py
+debug_*.py
+tmp_*.py
+scratch_*.py
+
+# 个人笔记和文档 (如果不想提交)
+# 项目与题目契合度分析.md  # 取消注释以忽略此文件
+# TRAINING_COMMANDS.md  # 取消注释以忽略此文件
+
+# 运行时生成的缓存
+.cache/
+cache/
+*.cache
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# ==========================================
+# 说明文档
+# ==========================================
+# 本 .gitignore 文件的设计原则:
+# 1. 忽略所有生成的数据集 (generated_datasets/)
+# 2. 忽略所有训练结果和模型文件 (NIPS_results/)
+# 3. 忽略所有 Python 缓存和虚拟环境
+# 4. 忽略所有日志和临时文件
+# 5. 保留所有源代码、配置文件和文档
+#
+# 如需提交某些被忽略的文件,可以使用:
+#   git add -f <file>  # 强制添加
+#
+# 如需查看被忽略的文件:
+#   git status --ignored
