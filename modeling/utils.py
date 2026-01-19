@@ -152,7 +152,8 @@ def setup_logger(log_file_path, log_name, mode="a"):
     logger = logging.getLogger(log_name)
     logger.setLevel(logging.INFO)
 
-    fh = logging.FileHandler(log_file_path, mode=mode)
+    # 文件处理器 - 使用 UTF-8 编码支持 emoji 和中文
+    fh = logging.FileHandler(log_file_path, mode=mode, encoding='utf-8')
     fh.setLevel(logging.INFO)
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
