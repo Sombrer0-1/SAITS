@@ -153,9 +153,14 @@ class SAITS_Forecaster(nn.Module):
         """
         使用 SAITS 编码器编码历史数据
         
+        关键机制: 利用 missing_mask 告知模型哪些是真实观测,哪些是填充值
+        - history 中缺失位置已填充为 0
+        - missing_mask 标记: 1=真实观测, 0=缺失填充
+        - 通过 concat([history, missing_mask]) 让模型区分真实值和填充值
+        
         参数:
-            history: [batch, history_len, feature_num]
-            missing_mask: [batch, history_len, feature_num] (可选)
+            history: [batch, history_len, feature_num] - 缺失位置填充为 0
+            missing_mask: [batch, history_len, feature_num] - 1=已观测, 0=缺失
         
         返回:
             encoded: [batch, history_len, d_model]
@@ -165,11 +170,20 @@ class SAITS_Forecaster(nn.Module):
         masks = missing_mask if missing_mask is not None else torch.ones_like(history)
         
         # ============================================
-        # 复制 SAITS 的编码逻辑,但保留 d_model 维度的编码
+        # 关键: 将 [X, masks] 拼接作为编码器输入
+        # 这样 Self-Attention 能区分真实观测值和填充的 0
         # ============================================
         
         # 第一个 DMSA 块
-        input_X_for_first = torch.cat([X, masks], dim=2) if self.saits_encoder.input_with_mask else X
+        if self.saits_encoder.input_with_mask:
+            # 拼接: [batch, history_len, feature_num*2]
+            input_X_for_first = torch.cat([X, masks], dim=2)
+            # Self-Attention 会学习:
+            # - 真实观测位置 (mask=1) 的模式
+            # - 忽略或降权缺失位置 (mask=0)
+        else:
+            input_X_for_first = X
+        
         input_X_for_first = self.saits_encoder.embedding_1(input_X_for_first)
         enc_output = self.saits_encoder.dropout(
             self.saits_encoder.position_enc(input_X_for_first)
@@ -184,8 +198,7 @@ class SAITS_Forecaster(nn.Module):
                 for _ in range(self.saits_encoder.n_group_inner_layers):
                     enc_output, _ = encoder_layer(enc_output)
         
-        # 这里的 enc_output 是 [batch, history_len, d_model]
-        # 这正是我们需要的编码表示!
+        # 返回编码表示: [batch, history_len, d_model]
         return enc_output
     
     def forward(self, history, future=None, missing_mask=None, stage='train'):
@@ -249,11 +262,10 @@ class SAITS_Forecaster_V2(nn.Module):
         # 初始化基础模型
         self.base_model = SAITS_Forecaster(*args, **kwargs)
         
-        # 新增: 重建头 (用于历史重建任务)
-        self.reconstruction_head = nn.Linear(
-            self.base_model.saits_encoder.layer_stack_for_first_block[0].d_model,
-            self.base_model.d_feature
-        )
+        # 新增: 重建投影层 (用于历史重建任务)
+        # 从编码器的输出维度 d_model 投影到特征维度 d_feature
+        d_model = kwargs.get('d_model', 256)  # 从参数中获取 d_model
+        self.reconstruction_proj = nn.Linear(d_model, self.base_model.d_feature)
     
     def forward(self, history, future=None, missing_mask=None, stage='train'):
         """前向传播 (带重建任务)"""
@@ -261,7 +273,7 @@ class SAITS_Forecaster_V2(nn.Module):
         encoded_history = self.base_model.encode_history(history, missing_mask)
         
         # 2. 任务A: 重建历史 (类似 SAITS 的 ORT)
-        reconstructed_history = self.reconstruction_head(encoded_history)
+        reconstructed_history = self.reconstruction_proj(encoded_history)
         
         # 3. 任务B: 预测未来
         forecast = self.base_model.forecast_head(encoded_history)

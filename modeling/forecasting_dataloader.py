@@ -69,12 +69,23 @@ class ForecastingDatasetWithMissing(Dataset):
     """
     支持缺失数据的预测数据集
     
-    适用场景: 历史数据中存在缺失值
+    数据处理流程:
+    1. 从 HDF5 读取原始 X (包含 NaN 标记的缺失值)
+    2. 生成 missing_mask: ~np.isnan(X) → (1=已观测, 0=缺失)
+    3. 填充 NaN 为 0: np.nan_to_num(X, nan=0.0)
+    4. 将 [X_filled, missing_mask] 一起传给模型
+    
     返回: (history, missing_mask, future)
+    
+    关键设计:
+    - missing_mask 告诉模型哪些位置是真实观测 (1),哪些是填充值 (0)
+    - 模型通过 input_with_mask=True 利用 mask 信息
+    - Self-Attention 会根据 mask 调整注意力权重
     """
-    def __init__(self, X, history_len, forecast_horizon, stride=1):
+    def __init__(self, X, missing_mask, history_len, forecast_horizon, stride=1):
         super().__init__()
         self.X = X
+        self.missing_mask = missing_mask  # 新增: 存储真实的 missing_mask
         self.history_len = history_len
         self.forecast_horizon = forecast_horizon
         self.stride = stride
@@ -95,24 +106,20 @@ class ForecastingDatasetWithMissing(Dataset):
     def __getitem__(self, idx):
         sample_idx, start_idx = self.valid_indices[idx]
         
-        # 历史窗口
+        # 提取历史窗口 (NaN 已填充为 0)
         history = self.X[sample_idx, start_idx:start_idx + self.history_len, :]
         
-        # 缺失掩码 (1=观测到, 0=缺失)
-        missing_mask = (~np.isnan(history)).astype('float32')
+        # 提取对应的 missing_mask (从 NaN 生成,1=观测,0=缺失)
+        history_mask = self.missing_mask[sample_idx, start_idx:start_idx + self.history_len, :]
         
-        # 填充缺失值为0
-        history_filled = np.nan_to_num(history)
-        
-        # 未来窗口 (假设未来数据完整,用于训练)
+        # 提取未来窗口
         future_start = start_idx + self.history_len
         future = self.X[sample_idx, future_start:future_start + self.forecast_horizon, :]
-        future_filled = np.nan_to_num(future)
         
         return (
-            torch.from_numpy(history_filled.astype('float32')),
-            torch.from_numpy(missing_mask.astype('float32')),
-            torch.from_numpy(future_filled.astype('float32'))
+            torch.from_numpy(history.astype('float32')),
+            torch.from_numpy(history_mask.astype('float32')),
+            torch.from_numpy(future.astype('float32'))
         )
 
 
@@ -160,39 +167,67 @@ class ForecastingDataLoader:
         self._create_datasets()
     
     def _load_data(self):
-        """从 H5 文件加载数据"""
+        """从 H5 文件加载数据,并从 NaN 生成 missing_mask"""
         with h5py.File(self.dataset_path, 'r') as hf:
-            # 原始插补数据集的结构: train/val/test -> X, X_hat, missing_mask
-            # 我们使用 X (原始数据,可能有缺失)
-            self.train_X = hf['train']['X'][:]
-            self.val_X = hf['val']['X'][:]
-            self.test_X = hf['test']['X'][:]
+            # 加载原始数据 X (包含 NaN)
+            train_X_raw = hf['train']['X'][:]
+            val_X_raw = hf['val']['X'][:]
+            test_X_raw = hf['test']['X'][:]
+            
+            # 从 NaN 生成 missing_mask (1=已观测, 0=缺失)
+            self.train_missing_mask = (~np.isnan(train_X_raw)).astype('float32')
+            self.val_missing_mask = (~np.isnan(val_X_raw)).astype('float32')
+            self.test_missing_mask = (~np.isnan(test_X_raw)).astype('float32')
+            
+            # 填充 NaN 为 0 (供模型使用)
+            self.train_X = np.nan_to_num(train_X_raw, nan=0.0)
+            self.val_X = np.nan_to_num(val_X_raw, nan=0.0)
+            self.test_X = np.nan_to_num(test_X_raw, nan=0.0)
             
             # 记录数据维度
             self.feature_num = self.train_X.shape[2]
             self.original_seq_len = self.train_X.shape[1]
+            
+            # 统计缺失率
+            train_missing_rate = 1 - self.train_missing_mask.mean()
+            val_missing_rate = 1 - self.val_missing_mask.mean()
+            test_missing_rate = 1 - self.test_missing_mask.mean()
         
         print(f"✅ 数据加载完成:")
-        print(f"   训练集: {self.train_X.shape}")
-        print(f"   验证集: {self.val_X.shape}")
-        print(f"   测试集: {self.test_X.shape}")
+        print(f"   训练集: {self.train_X.shape}, 缺失率: {train_missing_rate:.2%}")
+        print(f"   验证集: {self.val_X.shape}, 缺失率: {val_missing_rate:.2%}")
+        print(f"   测试集: {self.test_X.shape}, 缺失率: {test_missing_rate:.2%}")
         print(f"   特征维度: {self.feature_num}")
         print(f"   历史长度: {self.history_len}")
         print(f"   预测步数: {self.forecast_horizon}")
     
     def _create_datasets(self):
         """创建 PyTorch Dataset"""
-        DatasetClass = ForecastingDatasetWithMissing if self.handle_missing else ForecastingDataset
-        
-        self.train_set = DatasetClass(
-            self.train_X, self.history_len, self.forecast_horizon, self.stride
-        )
-        self.val_set = DatasetClass(
-            self.val_X, self.history_len, self.forecast_horizon, self.stride
-        )
-        self.test_set = DatasetClass(
-            self.test_X, self.history_len, self.forecast_horizon, self.stride
-        )
+        if self.handle_missing:
+            # 使用带 missing_mask 的数据集
+            self.train_set = ForecastingDatasetWithMissing(
+                self.train_X, self.train_missing_mask,
+                self.history_len, self.forecast_horizon, self.stride
+            )
+            self.val_set = ForecastingDatasetWithMissing(
+                self.val_X, self.val_missing_mask,
+                self.history_len, self.forecast_horizon, self.stride
+            )
+            self.test_set = ForecastingDatasetWithMissing(
+                self.test_X, self.test_missing_mask,
+                self.history_len, self.forecast_horizon, self.stride
+            )
+        else:
+            # 不考虑缺失值
+            self.train_set = ForecastingDataset(
+                self.train_X, self.history_len, self.forecast_horizon, self.stride
+            )
+            self.val_set = ForecastingDataset(
+                self.val_X, self.history_len, self.forecast_horizon, self.stride
+            )
+            self.test_set = ForecastingDataset(
+                self.test_X, self.history_len, self.forecast_horizon, self.stride
+            )
         
         print(f"✅ 数据集创建完成:")
         print(f"   训练样本: {len(self.train_set)}")
